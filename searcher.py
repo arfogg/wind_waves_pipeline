@@ -33,6 +33,8 @@ import pathlib
 # import run_integrate_intensity
 # import read_integrated_power
 
+import akr_burst_class
+
 
 sys.path.append(r'C:\Users\Alexandra\Documents\wind_waves_akr_code\wind_utility')
 import read_waters_masked_data
@@ -58,6 +60,9 @@ data_dir = os.path.join(
 # - freq_width is centre of bin to centre of bin, should it be otherwise?
 
 
+
+# run flux_tag all the way through
+
 def test_search():
 
     akr_df = read_waters_masked_data.read_data_day(2002, 11, 1)
@@ -81,15 +86,18 @@ def define_constants():
     
     # Minimum number of bins filled after the first detection
     min_length = 3
+    
+    # Minimum number of frequency bins filled to define frequency bounds
+    min_f_bins = 2
 
-    return threshold_number, time_gap, packing_density_threshold, min_length
+    return threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins
 
 def search(akr_df):
     
     code_stime = dt.datetime.now()
     
     # Define constants
-    threshold_number, time_gap, packing_density_threshold, min_length = define_constants()
+    threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins = define_constants()
 
     # Count the number of filled bins as a function of time
     datetimes, n_filled, above_threshold_n = count_filled_bins(akr_df, threshold_number)
@@ -103,6 +111,8 @@ def search(akr_df):
                                                         n_filled,
                                                         above_threshold_n)
 
+    # Build burst classes and identify frequency bands
+    akr_bursts = build_burst_objects(akr_df, burst_stimes, burst_etimes)
 
     # PLOT TEST
     fig, ax = plt.subplots(nrows=2, figsize=(8, 6))
@@ -149,103 +159,7 @@ def search(akr_df):
 
 def find_starts_and_ends(datetimes, n_filled, above_threshold_n):
 
-    # t1 = dt.datetime.now()
-    # burst_stimes = []
-    # burst_etimes = []
-    # threshold_number, time_gap, packing_density_threshold, min_length = define_constants()
-    # for i in range(1,n_filled.size-3):
-    #     if n_filled[i] > threshold_number :
-    #     #             # Yes
-    #     #             # Is the previous bin also filled? - this needs to be robust for dealing with index 0!
-    #     #             # Are we before a previously defined end time?
-    #         if (n_filled[i-1] <= threshold_number) & (n_filled[i+1] > threshold_number) & (n_filled[i+2] > threshold_number) & (n_filled[i+3] > threshold_number) & ( all(datetimes[i] > a for a in burst_etimes) == True):
-        
-    #             #print('AKR Burst start time identified as: ',datetimes[i])
-    #             burst_stimes.append(datetimes[i])
-    
-                
-    #             # print('Looking for AKR Burst end time...')
-    #             # Reset end_found
-    #             end_found=False
-    #             for j in range(i+1, n_filled.size):
-    #                 # Looking for n_filled to drop below threshold
-    #                 if n_filled[j] <= threshold_number:
-    #                     #print('dropped below - first time | n is',n_filled[j], '| time is ', datetimes[j], '| int is ', j )
-    #                     # Look to see if we pop back above the threshold again within the defined time gap?
-    #                     for k in range(j,j+time_gap):
-    #                         if n_filled[k] > threshold_number:
-    #                             #print('popped back above',n_filled[k])
-    #                             # We do pop above the threshold again at time k
-    #                             # Keep looking until we drop below the threshold, and don't pop up again
-    #                             #   within the allowed time gap
-                                
-    #                             # scanning after we have popped back up
-    #                             l=k+1
-    #                             while l in range(k+1, n_filled.size):
-          
-                                           
-    #                                 if n_filled[l] <= threshold_number:
-    #                                     # We are below the threshold again
-                                       
-    #                                     above_found=0
-    #                                     for m in range(l+1, l+time_gap):
-    #                                         #print('inside for, m is ', m, ' | n is ', n_filled[m], '| time is ', datetimes[m])
-    #                                         # Do we pop back above the threshold again?
-    #                                         if n_filled[m] > threshold_number:
-    #                                             # Then continue to search in the m for loop another drop below
-    #                                             #print('still above',n_filled[m])
-    #                                             above_found=above_found+1
-           
-    #                                         if above_found == 0:
-    #                                             end_found=True
-                                                       
-    #                                         if end_found==True:
-    #                                             print('AKR Burst end time: ',datetimes[l])
-    #                                             burst_etimes.append(datetimes[l])
-    #                                             break  # Break out of the while loop if we found the end time    
-    #                                         # If we got through all l:l+time_gap then skip to l+time_gap+1 and continue looking
-    #                                         l=l+time_gap+1
-                                                    
-    #                                     else:
-    #                                         l=l+1
-        
-    #                         # If we don't find anytime above threshold within the time gap, record j
-    #                         if end_found==False:
-    #                             # Burst ends at index j
-    #                             print('AKR Burst end time: ',datetimes[j])
-    #                             burst_etimes.append(datetimes[j])
-                                
-    #                         # Break out of end time search for loop (j)
-    #                         break
-    #                     else:
-    #                         # In case we are out of time intervals to find a burst, strip off the burst
-    #                         #   start time we found
-    #                         if j == n_filled.size-1: 
-    #                             print('Reach the end of the times given, so no burst end found')
-    #                             print('Deleting burst start with undefined end')
-    #                             burst_stimes=burst_stimes[0:-1]
-      
-            
-            
-    # t2 = dt.datetime.now()
-    # print('original method: ', t2-t1)
-
-    # t3 = dt.datetime.now()
-    # starts = (
-    #     # Not looking at the first or final three bins
-    #     above_threshold_n[1:-3] &
-    #     # Previous bin is False
-    #     ~above_threshold_n[:-4] &
-    #     # Next bin is True
-    #     above_threshold_n[2:-2] &
-    #     # Next bin is True
-    #     above_threshold_n[3:-1] &
-    #     # Next bin is True
-    #     above_threshold_n[4:]
-    # )
-    # start_idx = np.where(starts)[0] + 1
-
-    threshold_number, time_gap, packing_density_threshold, min_length = define_constants()
+    threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins = define_constants()
 
     # Find Burst Starts ------------------------
     # How many time steps
@@ -294,10 +208,6 @@ def find_starts_and_ends(datetimes, n_filled, above_threshold_n):
     
     return burst_stimes, burst_etimes
 
-
-
-# import matplotlib.pyplot as plt
-# import numpy as np
 
 def plot_freq_band_diagnostic(freqs, flux, f_low, f_high, time_label=None):
     """
@@ -357,7 +267,7 @@ def plot_freq_band_diagnostic(freqs, flux, f_low, f_high, time_label=None):
 
 
 def extract_freq_bands_for_burst(akr_df, akr_burst, flux_tag="akr_flux_si_1au",
-                                 packing_threshold=80.0, min_bins=2):
+                                 packing_threshold=80.0, min_f_bins=2):
 
     # Select only this burst's data
     df = akr_df[
@@ -376,7 +286,7 @@ def extract_freq_bands_for_burst(akr_df, akr_burst, flux_tag="akr_flux_si_1au",
         w, (l, h) = find_freq_bound(
             freqs, flux,
             packing_threshold=packing_threshold,
-            min_bins=min_bins
+            min_f_bins=min_f_bins
         )
         times.append(t)
         freq_width.append(w)
@@ -385,9 +295,26 @@ def extract_freq_bands_for_burst(akr_df, akr_burst, flux_tag="akr_flux_si_1au",
 
     akr_burst.record_freq_bands(times, freq_width, f_low, f_high)
 
+def build_burst_objects(akr_df, burst_stimes, burst_etimes):
+
+    bursts = []
+    _, _, packing_density_threshold, _ , min_f_bins = define_constants()
+
+    for i, (s, e) in enumerate(zip(burst_stimes, burst_etimes)):
+        b = akr_burst_class.akr_burst(i, s, e)
+
+        extract_freq_bands_for_burst(
+            akr_df, b,
+            packing_threshold=packing_density_threshold,
+            min_f_bins=min_f_bins
+        )
+
+        bursts.append(b)
+
+    return bursts
 
 
-def find_freq_bound(freqs, flux, packing_threshold, min_bins=2):
+def find_freq_bound(freqs, flux, packing_threshold, min_f_bins=2):
     """
     Find the widest frequency band with non-NaN flux in packing_threshold
     percentage bins.
@@ -411,7 +338,7 @@ def find_freq_bound(freqs, flux, packing_threshold, min_bins=2):
 
     N = len(freqs)
     # If we have less than min_bins frequency bands, return NaN
-    if N < min_bins:
+    if N < min_f_bins:
         return np.nan, np.nan
 
     # Identify bins with flux in
@@ -422,7 +349,7 @@ def find_freq_bound(freqs, flux, packing_threshold, min_bins=2):
     best_band = (np.nan, np.nan)
 
     # Sliding window sizes (i.e. w is band width in number of bins)
-    for w in range(min_bins, N + 1):
+    for w in range(min_f_bins, N + 1):
         # Counts how many valid bins are inside every possible band of width w
         counts = np.convolve(valid.astype(int), np.ones(w, dtype=int), 'valid')
         packing = 100 * (counts / w)
