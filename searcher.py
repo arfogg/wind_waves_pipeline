@@ -43,11 +43,19 @@ data_dir = os.path.join(
 
 
 # Points to consider optimising
+# 
 # - start is first above threshold and end is first below. so start is
 #   at the time of the burst, and end is just after. we should make them either
 #   both on the above threshold (on the burst, preferable), or both on the
 #   below threshold (around the burst)
-
+# 
+# - how to define frequency bins when the first time step doesn't meet our
+#   criteria? perhaps we take from the next valid bin, i.e. extrapolate back
+#
+# - what about when no timestamps in the burst meet the packing density
+#   threshold? so freq bounds are all NaNs
+#
+# - freq_width is centre of bin to centre of bin, should it be otherwise?
 
 
 def test_search():
@@ -285,6 +293,156 @@ def find_starts_and_ends(datetimes, n_filled, above_threshold_n):
     # print('new method: ', t4-t3)
     
     return burst_stimes, burst_etimes
+
+
+
+# import matplotlib.pyplot as plt
+# import numpy as np
+
+def plot_freq_band_diagnostic(freqs, flux, f_low, f_high, time_label=None):
+    """
+    Diagnostic plot showing the selected frequency band.
+
+    Parameters
+    ----------
+    freqs : np.ndarray
+        Frequency array (sorted)
+    flux : np.ndarray
+        Flux array (NaNs allowed)
+    f_low, f_high : float
+        Selected frequency band limits
+    time_label : str or datetime, optional
+        Label for plot title
+    """
+
+    valid = ~np.isnan(flux)
+    empty = np.isnan(flux)
+    # # Fill empty bins with a value so they plot
+    # flux[np.isnan(flux)] = 100
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    ax.plot(freqs[valid], np.full(freqs[valid].size, 1.), color='purple',
+            marker='*', markersize=20, fillstyle='none', linewidth=0.,
+            label='valid bins')
+    ax.plot(freqs[empty], np.full(freqs[empty].size, 1.), color='lightgray',
+            marker='o', markersize=20, fillstyle='none', linewidth=0,
+            label='empty bins')
+
+    # # Plot all bins
+    # ax.plot(freqs, flux, color='magenta', linewidth=0., marker="*", markersize=20, fillstyle='none', label='All bins')
+
+    # # Highlight valid bins
+    # ax.plot(freqs[valid], flux[valid], color='black', linewidth=0., marker='o', markersize=20, fillstyle='none', label='Valid bins')
+
+    # Shade selected band
+    if not np.isnan(f_low):
+        plt.axvspan(f_low, f_high, color='orange', alpha=0.3,
+                    label=f'Selected band ({f_low:.1f}–{f_high:.1f} kHz)')
+
+    plt.xlabel("Frequency (kHz)")
+    plt.ylabel("Flux")
+    title = "Frequency Band Detection"
+    if time_label is not None:
+        title += f"\n{time_label}"
+    plt.title(title)
+
+    ax.set_xscale('log')
+
+
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+def extract_freq_bands_for_burst(akr_df, akr_burst, flux_tag="akr_flux_si_1au",
+                                 packing_threshold=80.0, min_bins=2):
+
+    # Select only this burst's data
+    df = akr_df[
+        (akr_df["datetime_ut"] >= akr_burst.stime) &
+        (akr_df["datetime_ut"] <= akr_burst.etime)
+    ]
+
+    # Group by time
+    times, freq_width, f_low, f_high = [], [], [], []
+    for t, g in df.groupby("datetime_ut"):
+        g = g.sort_values("freq")
+        freqs = g["freq"].to_numpy()
+        flux  = g[flux_tag].to_numpy()
+
+        # find freq bounds for this time step
+        w, (l, h) = find_freq_bound(
+            freqs, flux,
+            packing_threshold=packing_threshold,
+            min_bins=min_bins
+        )
+        times.append(t)
+        freq_width.append(w)
+        f_low.append(l)
+        f_high.append(h)
+
+    akr_burst.record_freq_bands(times, freq_width, f_low, f_high)
+
+
+
+def find_freq_bound(freqs, flux, packing_threshold, min_bins=2):
+    """
+    Find the widest frequency band with non-NaN flux in packing_threshold
+    percentage bins.
+
+    Parameters
+    ----------
+    freqs : (N,) array
+        Sorted frequencies (low to high)
+    flux : (N,) array
+        Flux values (NaNs allowed)
+    packing_threshold : float
+        Required % of valid bins
+    min_bins : int, optional
+        Minimum number of bins in a band
+
+    Returns
+    -------
+    best_width : float
+    f_low, f_high : float, float
+    """
+
+    N = len(freqs)
+    # If we have less than min_bins frequency bands, return NaN
+    if N < min_bins:
+        return np.nan, np.nan
+
+    # Identify bins with flux in
+    valid = ~np.isnan(flux)
+
+    # Initialise variables
+    best_width = 0
+    best_band = (np.nan, np.nan)
+
+    # Sliding window sizes (i.e. w is band width in number of bins)
+    for w in range(min_bins, N + 1):
+        # Counts how many valid bins are inside every possible band of width w
+        counts = np.convolve(valid.astype(int), np.ones(w, dtype=int), 'valid')
+        packing = 100 * (counts / w)
+
+        # Find starting indices of bands where packing threshold is met
+        good = np.where(packing >= packing_threshold)[0]
+        # Move on to next w
+        if good.size == 0:
+            continue
+
+        # Find band that's widest in frequency
+        widths = freqs[good + w - 1] - freqs[good]
+        i = widths.argmax()
+
+        # If better than what we've found already, store
+        if widths[i] > best_width:
+            best_width = widths[i]
+            best_band = (freqs[good[i]], freqs[good[i] + w - 1])
+
+    return best_width, best_band
 
 
 def count_filled_bins(akr_df, threshold_number, ofile='_TEST', flux_tag='akr_flux_si_1au'):
