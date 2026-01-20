@@ -277,7 +277,7 @@ def burst_detection_diagnostic(akr_df, akr_bursts,
     #plot_freq_band_diagnostic(freqs, flux, f_low, f_high, ax)
 
 def plot_freq_band_diagnostic(akr_burst, akr_df,
-                              timestamp_s_index=0,
+                              timestamp_s_index=5, n_examples=4,
                               spec_time_buffer=pd.Timedelta(minutes=10),
                               time_label=None, flux_tag='akr_flux_si_1au',
                               cmap='gray'):
@@ -308,11 +308,19 @@ def plot_freq_band_diagnostic(akr_burst, akr_df,
     ax_spec.plot(akr_burst.burst_timestamp, akr_burst.freq_low, color='orange')
     ax_spec.plot(akr_burst.burst_timestamp, akr_burst.freq_high, color='orange')
 
+    # Indicate where the zoom in is
+    ax_spec.axvline(akr_burst.burst_timestamp[timestamp_s_index], color='blue')
+    ax_spec.axvline(akr_burst.burst_timestamp[timestamp_s_index + n_examples-1], color='blue')
+
     # Select spectrogram data for this burst
     burst_spec_df = akr_df.loc[(akr_df.datetime_ut >= akr_burst.stime) &
                                (akr_df.datetime_ut <= akr_burst.etime)]
 
-    for i, t in enumerate(np.array(akr_burst.burst_timestamp)[0:4]):
+    x_tick_pos = []
+    x_tick_n = []
+    for i, t in enumerate(np.array(
+            akr_burst.burst_timestamp)[
+                0 + timestamp_s_index:n_examples + timestamp_s_index]):
 
         demo_df = burst_spec_df.loc[(burst_spec_df.datetime_ut == t)]
         flux = demo_df[flux_tag].to_numpy()
@@ -331,8 +339,11 @@ def plot_freq_band_diagnostic(akr_burst, akr_df,
         y[-1] = freqs[-1] + (freqs[-1]-y[-2])
 
         # Create x positions
+        real_dtime = demo_df.datetime_ut.unique()[0]
         dtime = 11.5 + (i * 10)
         dtime_edges = np.array([int(11 + (i * 10)), int(12 + (i * 10))])
+        x_tick_pos.append(dtime)
+        x_tick_n.append(real_dtime.strftime("%H:%M"))
 
         # Create meshgrid which defines the edges of the shapes
         x_arr, y_arr = np.meshgrid(dtime_edges, y)
@@ -406,7 +417,7 @@ def plot_freq_band_diagnostic(akr_burst, akr_df,
     
     ax_diag.set_yscale('log')
     ax_diag.set_xlim(0, 51)
-
+    ax_diag.set_xticks(x_tick_pos, x_tick_n)
 
 
 def plot_freq_band_diagnostic_old(#freqs, flux, f_low, f_high,
