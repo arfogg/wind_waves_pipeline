@@ -10,9 +10,12 @@ import sys
 import datetime as dt
 import pandas as pd
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from numpy.lib.stride_tricks import sliding_window_view
+
+from matplotlib.gridspec import GridSpec
 #import pprint
 # import matplotlib as mpl
 # import scipy
@@ -45,6 +48,16 @@ data_dir = os.path.join(
      "C:" + os.sep, r'Users\Alexandra\Documents\data\fogg_burst_data\2026_refactor')
 
 
+# Set up fontsizes
+fontsize = 20
+plt.rcParams['font.size'] = fontsize
+plt.rcParams['axes.titlesize'] = fontsize
+plt.rcParams['axes.labelsize'] = fontsize
+plt.rcParams['xtick.labelsize'] = fontsize
+plt.rcParams['ytick.labelsize'] = fontsize
+plt.rcParams['legend.fontsize'] = fontsize
+
+
 # Points to consider optimising
 # 
 # - start is first above threshold and end is first below. so start is
@@ -68,8 +81,32 @@ def test_search():
 
     akr_df = read_waters_masked_data.read_data_day(2002, 11, 1)
 
-    burst_stimes, burst_etimes = search(akr_df)
-    breakpoint()
+    # ID of the burst we want to freq diagnostic
+    ID = 12
+    # X axis start and end
+    t_start, t_end = dt.datetime(2002,11,1,8), dt.datetime(2002,11,1,13)
+
+
+    # Define constants
+    threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins = define_constants()
+
+    akr_bursts, burst_stimes, burst_etimes, datetimes, n_filled, above_threshold_n = search(akr_df)
+    
+    burst_detection_diagnostic(akr_df, akr_bursts,
+                               datetimes, n_filled, above_threshold_n,
+                               threshold_number, time_gap,
+                               packing_density_threshold, min_length,
+                               min_f_bins, t_start, t_end)
+    
+    # Find the relevant burst
+    akr_burst = next(b for b in akr_bursts if b.burst_ID == 12)
+    fig_f, ax_f = plt.subplots()
+    plot_freq_band_diagnostic(ax_f, akr_burst, akr_df)
+    
+    #breakpoint()
+    return akr_df, akr_bursts, datetimes, n_filled, above_threshold_n,\
+        threshold_number, time_gap, packing_density_threshold, min_length,\
+        min_f_bins
 
 def define_constants():
     
@@ -115,63 +152,14 @@ def search(akr_df):
     # Build burst classes and identify frequency bands
     akr_bursts = build_burst_objects(akr_df, burst_stimes, burst_etimes)
 
-    # PLOT A DIAGNOSTIC
-    fig, ax = plt.subplots(nrows=4, figsize=(10, 12))
-
-    # N filled
-    ax[0].plot(datetimes, n_filled, linewidth=1., color='grey')
-    ind_gt, = np.where(n_filled >= threshold_number)
-    ind_lt, = np.where(n_filled < threshold_number)
-    ax[0].plot(datetimes[ind_gt], n_filled[ind_gt], linewidth=0,
-               marker='o', fillstyle='none', color='teal',
-               label='n $\geq$ '+str(threshold_number))
-    ax[0].plot(datetimes[ind_lt], n_filled[ind_lt], linewidth=0,
-               marker='o', fillstyle='none', color='orange',
-               label='n < '+str(threshold_number))
-    ax[0].axhline(threshold_number, linewidth=1.5, color='grey',
-                  linestyle='dashed')
-    ax[0].legend()
-
-    # True/False timeseries
-    ind_t, = np.where(above_threshold_n == True)
-    ind_f, = np.where(above_threshold_n == False)
-    ax[1].plot(datetimes[ind_t], above_threshold_n[ind_t], linewidth=0.,
-               marker='^', color='teal', label='True')
-    ax[1].plot(datetimes[ind_f], above_threshold_n[ind_f], linewidth=0.,
-               marker='^', color='orange', label='False')
-    ax[1].legend()
-
-    # Spectrogram of Waters Mask, with polygon
-    ax[2], x_arr, y_arr, z_arr = spectrogram_plotter.return_spectrogram(
-        akr_df, ax[2], cmap='gray')
-    # Indicate starts and ends
-    for b in akr_bursts:
-        ax[2].plot(b.burst_timestamp, b.freq_low, color='orange')
-        ax[2].plot(b.burst_timestamp, b.freq_high, color='orange')
-
-    # Adjust axis width for non-spectrogram axes
-    pos_spec = ax[2].get_position().bounds
-    for a in [ax[0], ax[1]]:
-        pos = a.get_position().bounds
-        a.set_position([pos_spec[0], pos[1], pos_spec[2], pos[3]])
-
-    # Formatting axes
-    for a in ax:
-        # X limits
-        a.set_xlim(dt.datetime(2002,11,1,8), dt.datetime(2002,11,1,13))
-        # Indicate starts and ends
-        for s in burst_stimes:
-            a.axvline(s, linestyle='dashed', color='purple')
-        for e in burst_etimes:
-            a.axvline(e, linestyle='dotted', color='purple')
 
     code_etime = dt.datetime.now()
      
     print('Code finished, time elapsed: ', code_etime - code_stime)
 
     print('WARNING: NEED TO IMPLEMENT SMALL BURST SEARCH AND STICKER')
-    print('WARNING: NEED TO IMPLEMENT CREATION OF BURST-MASKED DATA')
-    return burst_stimes, burst_etimes
+    print('WARNING: NEED TO IMPLEMENT CREATION OF BURST-MASKED DATA, including putting it into akr_burst class')
+    return akr_bursts, burst_stimes, burst_etimes, datetimes, n_filled, above_threshold_n
 
 
 
@@ -227,7 +215,203 @@ def find_starts_and_ends(datetimes, n_filled, above_threshold_n):
     return burst_stimes, burst_etimes
 
 
-def plot_freq_band_diagnostic(freqs, flux, f_low, f_high, time_label=None):
+def burst_detection_diagnostic(akr_df, akr_bursts,
+                                datetimes, n_filled, above_threshold_n,
+                                threshold_number, time_gap,
+                                packing_density_threshold, min_length,
+                                min_f_bins, t_start, t_end):
+    # PLOT A DIAGNOSTIC
+    fig, ax = plt.subplots(nrows=4, figsize=(10, 12))
+
+    # N filled
+    ax[0].plot(datetimes, n_filled, linewidth=1., color='grey')
+    ind_gt, = np.where(n_filled >= threshold_number)
+    ind_lt, = np.where(n_filled < threshold_number)
+    ax[0].plot(datetimes[ind_gt], n_filled[ind_gt], linewidth=0,
+               marker='o', fillstyle='none', color='teal',
+               label='n $\geq$ '+str(threshold_number))
+    ax[0].plot(datetimes[ind_lt], n_filled[ind_lt], linewidth=0,
+               marker='o', fillstyle='none', color='orange',
+               label='n < '+str(threshold_number))
+    ax[0].axhline(threshold_number, linewidth=1.5, color='grey',
+                  linestyle='dashed')
+    ax[0].legend()
+
+    # True/False timeseries
+    ind_t, = np.where(above_threshold_n == True)
+    ind_f, = np.where(above_threshold_n == False)
+    ax[1].plot(datetimes[ind_t], above_threshold_n[ind_t], linewidth=0.,
+               marker='^', color='teal', label='True')
+    ax[1].plot(datetimes[ind_f], above_threshold_n[ind_f], linewidth=0.,
+               marker='^', color='orange', label='False')
+    ax[1].legend()
+
+    # Spectrogram of Waters Mask, with polygon
+    ax[2], x_arr, y_arr, z_arr = spectrogram_plotter.return_spectrogram(
+        akr_df, ax[2], cmap='gray')
+    # Indicate freq low and high
+    for b in akr_bursts:
+        ax[2].plot(b.burst_timestamp, b.freq_low, color='orange')
+        ax[2].plot(b.burst_timestamp, b.freq_high, color='orange')
+
+    # Adjust axis width for non-spectrogram axes
+    pos_spec = ax[2].get_position().bounds
+    for a in [ax[0], ax[1]]:
+        pos = a.get_position().bounds
+        a.set_position([pos_spec[0], pos[1], pos_spec[2], pos[3]])
+
+    # Formatting axes
+    for a in ax:
+        # X limits
+        a.set_xlim(t_start, t_end)
+        # Indicate starts and ends
+        for b in akr_bursts:
+            a.axvline(b.stime, linestyle='dashed', color='purple')
+            a.axvline(b.etime, linestyle='dotted', color='purple')
+            
+    # Frequency band diagnostic
+    
+    
+    
+    #fig_f, ax_f = plt.subplots()
+    #plot_freq_band_diagnostic(freqs, flux, f_low, f_high, ax)
+
+def plot_freq_band_diagnostic(akr_burst, akr_df,
+                              timestamp_s_index=0,
+                              spec_time_buffer=pd.Timedelta(minutes=10),
+                              time_label=None, flux_tag='akr_flux_si_1au',
+                              cmap='gray'):
+    """
+    Diagnostic plot showing the selected frequency band.
+
+    Parameters
+    ----------
+
+    """
+
+    
+    # Initialise figure
+    fig_f = plt.figure(layout="constrained", figsize=(10, 12))
+    gs = GridSpec(4, 1, figure=fig_f)
+    ax_spec = fig_f.add_subplot(gs[0, :])
+    ax_diag = fig_f.add_subplot(gs[1:, :])
+
+    # Spectrogram of Waters Mask, with polygon
+    ax_spec, x_arr, y_arr, z_arr = spectrogram_plotter.return_spectrogram(
+        akr_df, ax_spec, cmap='gray')    
+    ax_spec.set_xlim(akr_burst.stime - spec_time_buffer,
+                     akr_burst.etime + spec_time_buffer)
+
+    # Indicate burst detection
+    ax_spec.axvline(akr_burst.stime, color='purple', linestyle='dashed')
+    ax_spec.axvline(akr_burst.etime, color='purple', linestyle='dotted')
+    ax_spec.plot(akr_burst.burst_timestamp, akr_burst.freq_low, color='orange')
+    ax_spec.plot(akr_burst.burst_timestamp, akr_burst.freq_high, color='orange')
+
+    # Select spectrogram data for this burst
+    burst_spec_df = akr_df.loc[(akr_df.datetime_ut >= akr_burst.stime) &
+                               (akr_df.datetime_ut <= akr_burst.etime)]
+
+    for i, t in enumerate(np.array(akr_burst.burst_timestamp)[0:4]):
+
+        demo_df = burst_spec_df.loc[(burst_spec_df.datetime_ut == t)]
+        flux = demo_df[flux_tag].to_numpy()
+        freqs = demo_df['freq'].to_numpy()
+        f_low = akr_burst.freq_low[i + timestamp_s_index]
+        f_high = akr_burst.freq_high[i + timestamp_s_index]
+
+        # Define spectrogram arrays
+        y = np.full(freqs.size + 1, np.nan)
+        # Run through calculating bin edges, skipping the first and last bands
+        # using midpoint definition x[i]+x[i+1])/2 
+        for j in range(1, freqs.size):
+            y[j] = (freqs[j-1] + freqs[j])/2
+        # Calculate the edges for the first and last bins    
+        y[0] = freqs[0] - ( y[1]-freqs[0] )
+        y[-1] = freqs[-1] + (freqs[-1]-y[-2])
+
+        # Create x positions
+        dtime = 11.5 + (i * 10)
+        dtime_edges = np.array([int(11 + (i * 10)), int(12 + (i * 10))])
+
+        # Create meshgrid which defines the edges of the shapes
+        x_arr, y_arr = np.meshgrid(dtime_edges, y)
+        # Convert columns to NumPy arrays once
+        times = np.full(len(demo_df), dtime)
+        freqs_data = demo_df['freq'].to_numpy()
+        flux = demo_df[flux_tag].to_numpy()
+
+        # Find which time bin and freq bin each data point belongs to
+        time_bin = np.searchsorted(dtime_edges, times) - 1
+        freq_bin = np.searchsorted(y, freqs_data) - 1
+        #breakpoint()
+        # Create z array
+        z_arr = np.full((len(y)-1, len(dtime_edges)-1), np.nan)
+    
+        # Fill the array
+        valid = (
+            (time_bin >= 0) & (time_bin < z_arr.shape[1]) &
+            (freq_bin >= 0) & (freq_bin < z_arr.shape[0])
+        )
+        z_arr[freq_bin[valid], time_bin[valid]] = flux[valid]
+
+        # Create image, normalising color on logscale
+        im = ax_diag.pcolormesh(x_arr, y_arr, z_arr, cmap=cmap,
+                                norm=mpl.colors.LogNorm(), edgecolors='blue')
+        # Set y axis as log space
+        ax_diag.set_yscale('log')
+        
+        # Indicate successful freq bins
+        ax_diag.plot([dtime + 1., dtime + 1.], [f_low, f_high],
+                     marker='x', color='red')
+        ax_diag.text(dtime + 2., f_high,
+                     f'{f_low:.1f}–\n{f_high:.1f} kHz',
+                     ha='left', va='center', color='red', fontsize=15)
+
+        # # Enable colour bar
+        # if no_cbar == False:
+        #     cbar = plt.colorbar(im_m, ax=ax, label='S (W m$^{-2}$ Hz$^{-1}$)')
+        #     cbar.ax.yaxis.set_major_locator(mpl.ticker.LogLocator())
+        #     cbar.ax.yaxis.set_minor_locator(mpl.ticker.NullLocator())
+    
+        # # Labels and ticks
+        # ax.set_ylabel('Frequency (kHz)')
+        # ax.xaxis.set_major_formatter(mpl.dates.DateFormatter("%H%M"))
+
+
+        # valid = ~np.isnan(flux)
+        # empty = np.isnan(flux)
+        # # # Fill empty bins with a value so they plot
+        # # flux[np.isnan(flux)] = 100
+        # # fig, ax = plt.subplots(figsize=(6, 4))
+    
+        # ax.plot(freqs[valid], np.full(freqs[valid].size, 1.), color='purple',
+        #         marker='*', markersize=20, fillstyle='none', linewidth=0.,
+        #         label='valid bins')
+        # ax.plot(freqs[empty], np.full(freqs[empty].size, 1.), color='lightgray',
+        #         marker='o', markersize=20, fillstyle='none', linewidth=0,
+        #         label='empty bins')
+    
+        # # Shade selected band
+        # if not np.isnan(f_low):
+        #     plt.axvspan(f_low, f_high, color='orange', alpha=0.3,
+        #                 label=f'Selected band ({f_low:.1f}–{f_high:.1f} kHz)')
+    
+        # plt.xlabel("Frequency (kHz)")
+        # plt.ylabel("Flux")
+        # title = "Frequency Band Detection"
+        # if time_label is not None:
+        #     title += f"\n{time_label}"
+        # plt.title(title)
+    
+    ax_diag.set_yscale('log')
+    ax_diag.set_xlim(0, 51)
+
+
+
+def plot_freq_band_diagnostic_old(#freqs, flux, f_low, f_high,
+                              ax, akr_burst, akr_df,
+                              time_label=None):
     """
     Diagnostic plot showing the selected frequency band.
 
@@ -242,12 +426,22 @@ def plot_freq_band_diagnostic(freqs, flux, f_low, f_high, time_label=None):
     time_label : str or datetime, optional
         Label for plot title
     """
+    
+    # spec_df = akr_df.loc[(akr_df.datetime_ut >= akr_burst.stime) &
+    #                      (akr_df.datetime_ut <= akr_burst.etime)]
+
+    spec_df = akr_df.loc[(akr_df.datetime_ut == akr_burst.stime)]
+    flux = spec_df['akr_flux_si_1au'].to_numpy()
+    freqs = spec_df['freq'].to_numpy()
+    f_low = akr_burst.freq_low[0]
+    f_high = akr_burst.freq_high[0]
+
 
     valid = ~np.isnan(flux)
     empty = np.isnan(flux)
     # # Fill empty bins with a value so they plot
     # flux[np.isnan(flux)] = 100
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # fig, ax = plt.subplots(figsize=(6, 4))
 
     ax.plot(freqs[valid], np.full(freqs[valid].size, 1.), color='purple',
             marker='*', markersize=20, fillstyle='none', linewidth=0.,
