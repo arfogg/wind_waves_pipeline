@@ -34,6 +34,7 @@ import pathlib
 # import read_integrated_power
 
 import akr_burst_class
+import spectrogram_plotter
 
 
 sys.path.append(r'C:\Users\Alexandra\Documents\wind_waves_akr_code\wind_utility')
@@ -67,7 +68,7 @@ def test_search():
 
     akr_df = read_waters_masked_data.read_data_day(2002, 11, 1)
 
-    search(akr_df)
+    burst_stimes, burst_etimes = search(akr_df)
     breakpoint()
 
 def define_constants():
@@ -114,45 +115,62 @@ def search(akr_df):
     # Build burst classes and identify frequency bands
     akr_bursts = build_burst_objects(akr_df, burst_stimes, burst_etimes)
 
-    # PLOT TEST
-    fig, ax = plt.subplots(nrows=2, figsize=(8, 6))
-    
+    # PLOT A DIAGNOSTIC
+    fig, ax = plt.subplots(nrows=4, figsize=(10, 12))
+
+    # N filled
     ax[0].plot(datetimes, n_filled, linewidth=1., color='grey')
     ind_gt, = np.where(n_filled >= threshold_number)
     ind_lt, = np.where(n_filled < threshold_number)
     ax[0].plot(datetimes[ind_gt], n_filled[ind_gt], linewidth=0,
-               marker='o', fillstyle='none', color='teal')
+               marker='o', fillstyle='none', color='teal',
+               label='n $\geq$ '+str(threshold_number))
     ax[0].plot(datetimes[ind_lt], n_filled[ind_lt], linewidth=0,
-               marker='o', fillstyle='none', color='orange')
+               marker='o', fillstyle='none', color='orange',
+               label='n < '+str(threshold_number))
     ax[0].axhline(threshold_number, linewidth=1.5, color='grey',
                   linestyle='dashed')
+    ax[0].legend()
 
-    #breakpoint()
+    # True/False timeseries
     ind_t, = np.where(above_threshold_n == True)
     ind_f, = np.where(above_threshold_n == False)
     ax[1].plot(datetimes[ind_t], above_threshold_n[ind_t], linewidth=0.,
-               marker='^', color='teal')
+               marker='^', color='teal', label='True')
     ax[1].plot(datetimes[ind_f], above_threshold_n[ind_f], linewidth=0.,
-               marker='^', color='orange')
+               marker='^', color='orange', label='False')
+    ax[1].legend()
 
-    for s in burst_stimes:
-        ax[0].axvline(s, linestyle='dashed', color='green')
-        ax[1].axvline(s, linestyle='dashed', color='green')
-    for e in burst_etimes:
-        ax[0].axvline(e, linestyle='dashed', color='red')
-        ax[1].axvline(e, linestyle='dashed', color='red')
+    # Spectrogram of Waters Mask, with polygon
+    ax[2], x_arr, y_arr, z_arr = spectrogram_plotter.return_spectrogram(
+        akr_df, ax[2], cmap='gray')
+    # Indicate starts and ends
+    for b in akr_bursts:
+        ax[2].plot(b.burst_timestamp, b.freq_low, color='orange')
+        ax[2].plot(b.burst_timestamp, b.freq_high, color='orange')
 
-    #breakpoint()
+    # Adjust axis width for non-spectrogram axes
+    pos_spec = ax[2].get_position().bounds
+    for a in [ax[0], ax[1]]:
+        pos = a.get_position().bounds
+        a.set_position([pos_spec[0], pos[1], pos_spec[2], pos[3]])
 
-
+    # Formatting axes
     for a in ax:
+        # X limits
         a.set_xlim(dt.datetime(2002,11,1,8), dt.datetime(2002,11,1,13))
+        # Indicate starts and ends
+        for s in burst_stimes:
+            a.axvline(s, linestyle='dashed', color='purple')
+        for e in burst_etimes:
+            a.axvline(e, linestyle='dotted', color='purple')
 
     code_etime = dt.datetime.now()
      
     print('Code finished, time elapsed: ', code_etime - code_stime)
 
-
+    print('WARNING: NEED TO IMPLEMENT SMALL BURST SEARCH AND STICKER')
+    print('WARNING: NEED TO IMPLEMENT CREATION OF BURST-MASKED DATA')
     return burst_stimes, burst_etimes
 
 
