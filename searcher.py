@@ -77,7 +77,43 @@ plt.rcParams['legend.fontsize'] = fontsize
 
 # run flux_tag all the way through
 
-def test_search():
+
+def test_search_walker_paper():
+
+    akr_df = read_waters_masked_data.read_data_day(2004, 2, 6)
+
+    # ID of the burst we want to freq diagnostic
+    ID = 3
+    # X axis start and end
+    t_start, t_end = dt.datetime(2004, 2, 6, 3), dt.datetime(2004, 2, 6, 9)
+
+
+    # Define constants
+    threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins = define_constants()
+
+
+    # Run search
+    akr_bursts, burst_stimes, burst_etimes, datetimes, n_filled, above_threshold_n = search(akr_df, ofile='walker')
+    # Plot diagnostic
+    burst_detection_diagnostic(akr_df, akr_bursts,
+                               datetimes, n_filled, above_threshold_n,
+                               threshold_number, time_gap,
+                               packing_density_threshold, min_length,
+                               min_f_bins, t_start, t_end)
+    
+    # Find the relevant burst
+    akr_burst = next(b for b in akr_bursts if b.burst_ID == ID)
+    # fig_f, ax_f = plt.subplots()
+    plot_freq_band_diagnostic(akr_burst, akr_df, timestamp_s_index=35)
+    
+    #breakpoint()
+    return akr_df, akr_bursts, datetimes, n_filled, above_threshold_n,\
+        threshold_number, time_gap, packing_density_threshold, min_length,\
+        min_f_bins
+
+
+
+def test_search_fogg_paper():
 
     akr_df = read_waters_masked_data.read_data_day(2002, 11, 1)
 
@@ -99,9 +135,9 @@ def test_search():
                                min_f_bins, t_start, t_end)
     
     # Find the relevant burst
-    akr_burst = next(b for b in akr_bursts if b.burst_ID == 12)
-    fig_f, ax_f = plt.subplots()
-    plot_freq_band_diagnostic(ax_f, akr_burst, akr_df)
+    akr_burst = next(b for b in akr_bursts if b.burst_ID == ID)
+    # fig_f, ax_f = plt.subplots()
+    plot_freq_band_diagnostic(akr_burst, akr_df)
     
     #breakpoint()
     return akr_df, akr_bursts, datetimes, n_filled, above_threshold_n,\
@@ -130,7 +166,7 @@ def define_constants():
 
     return threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins
 
-def search(akr_df):
+def search(akr_df, ofile=''):
     
     code_stime = dt.datetime.now()
     
@@ -138,7 +174,7 @@ def search(akr_df):
     threshold_number, time_gap, packing_density_threshold, min_length, min_f_bins = define_constants()
 
     # Count the number of filled bins as a function of time
-    datetimes, n_filled, above_threshold_n = count_filled_bins(akr_df, threshold_number)
+    datetimes, n_filled, above_threshold_n = count_filled_bins(akr_df, threshold_number, ofile=ofile)
 
     # Convert timestamps to unix time
     akr_df['unix'] = [pd.Timestamp(t).timestamp() for t in akr_df.datetime_ut]
@@ -269,12 +305,6 @@ def burst_detection_diagnostic(akr_df, akr_bursts,
             a.axvline(b.stime, linestyle='dashed', color='purple')
             a.axvline(b.etime, linestyle='dotted', color='purple')
             
-    # Frequency band diagnostic
-    
-    
-    
-    #fig_f, ax_f = plt.subplots()
-    #plot_freq_band_diagnostic(freqs, flux, f_low, f_high, ax)
 
 def plot_freq_band_diagnostic(akr_burst, akr_df,
                               timestamp_s_index=5, n_examples=4,
